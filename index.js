@@ -7,21 +7,12 @@ const shortid = require('shortid');
 
 require('dotenv').config();
 
-//* Middleware
-
 app.use(cors());
 app.use(express.static('public'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-//* MongoDB
-
-mongoose.connect(process.env.DB_URL, {
-	useNewUrlParser: true,
-	useUnifiedTopology: true,
-});
-
-//* Schemas
+mongoose.connect(process.env.DB_URL, { useNewUrlParser: true, useUnifiedTopology: true });
 
 const exerciseSchema = new mongoose.Schema({
 	userId: String,
@@ -35,44 +26,27 @@ const userSchema = new mongoose.Schema({
 	username: String,
 });
 
-//* Models
+const User = mongoose.model('User', userSchema);
+const Exercise = mongoose.model('Exercise', exerciseSchema);
 
-let User = mongoose.model('User', userSchema);
-
-let Exercise = mongoose.model('Exercise', exerciseSchema);
-
-// Delete all users
- 
-app.get('/api/users/delete', function (_req, res) {
-	console.log('### delete all users ###'.toLocaleUpperCase());
-
-	User.deleteMany({}, function (err, result) {
-		if (err) {
-			console.error(err);
-			res.json({
-				message: 'Deleting all users failed!',
-			});
-		}
-
-		res.json({ message: 'All users have been deleted!', result: result });
-	});
+app.get('/api/users/delete', async (_req, res) => {
+	try {
+		await User.deleteMany({});
+		res.json({ message: 'All users have been deleted!' });
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'Deleting all users failed!' });
+	}
 });
 
-//Delete all exercises
-
-app.get('/api/exercises/delete', function (_req, res) {
-	console.log('### delete all exercises ###'.toLocaleUpperCase());
-
-	Exercise.deleteMany({}, function (err, result) {
-		if (err) {
-			console.error(err);
-			res.json({
-				message: 'Deleting all exercises failed!',
-			});
-		}
-
-		res.json({ message: 'All exercises have been deleted!', result: result });
-	});
+app.get('/api/exercises/delete', async (_req, res) => {
+	try {
+		await Exercise.deleteMany({});
+		res.json({ message: 'All exercises have been deleted!' });
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'Deleting all exercises failed!' });
+	}
 });
 
 app.get('/', async (_req, res) => {
@@ -81,147 +55,86 @@ app.get('/', async (_req, res) => {
 	await Exercise.syncIndexes();
 });
 
-// Get all users
-app.get('/api/users', function (_req, res) {
-	console.log('### get all users ###'.toLocaleUpperCase());
-
-	User.find({}, function (err, users) {
-		if (err) {
-			console.error(err);
-			res.json({
-				message: 'Getting all users failed!',
-			});
-		}
-
+app.get('/api/users', async (_req, res) => {
+	try {
+		const users = await User.find({});
 		if (users.length === 0) {
 			res.json({ message: 'There are no users in the database!' });
+		} else {
+			console.log('users in database: ' + users.length);
+			res.json(users);
 		}
-
-		console.log('users in database: '.toLocaleUpperCase() + users.length);
-
-		res.json(users);
-	});
-});
-
-
-// Create a new user
-app.post('/api/users', function (req, res) {
-	const inputUsername = req.body.username;
-
-	console.log('### create a new user ###'.toLocaleUpperCase());
-
-	// Create a new user
-	let newUser = new User({ username: inputUsername });
-
-	console.log(
-		'creating a new user with username - '.toLocaleUpperCase() + inputUsername
-	);
-
-	newUser.save((err, user) => {
-		if (err) {
-			console.error(err);
-			res.json({ message: 'User creation failed!' });
-		}
-
-		res.json({ username: user.username, _id: user._id });
-	});
-});
-
-//Add a new exercise
-app.post('/api/users/:_id/exercises', function (req, res) {
-	var userId = req.params._id;
-	var description = req.body.description;
-	var duration = req.body.duration;
-	var date = req.body.date;
-
-	console.log('### add a new exercise ###'.toLocaleUpperCase());
-
-	// Check for date
-	if (!date) {
-		date = new Date().toISOString().substring(0, 10);
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'Getting all users failed!' });
 	}
+});
 
-	console.log(
-		'looking for user with id ['.toLocaleUpperCase() + userId + '] ...'
-	);
+app.post('/api/users', async (req, res) => {
+	const { username } = req.body;
+	try {
+		const newUser = await User.create({ username });
+		res.json({ username: newUser.username, _id: newUser._id });
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'User creation failed!' });
+	}
+});
 
-	// Find the user
-	User.findById(userId, (err, userInDb) => {
-		if (err) {
-			console.error(err);
-			res.json({ message: 'There are no users with that ID in the database!' });
-		}
-
-		// Create new exercise
-		let newExercise = new Exercise({
+app.post('/api/users/:_id/exercises', async (req, res) => {
+	const { _id } = req.params;
+	const { description, duration, date } = req.body;
+	try {
+		let userInDb = await User.findById(_id);
+		if (!date) date = new Date().toISOString().substring(0, 10);
+		const newExercise = await Exercise.create({
 			userId: userInDb._id,
 			username: userInDb.username,
-			description: description,
+			description,
 			duration: parseInt(duration),
-			date: date,
+			date,
 		});
-
-		newExercise.save((err, exercise) => {
-			if (err) {
-				console.error(err);
-				res.json({ message: 'Exercise creation failed!' });
-			}
-
-			res.json({
-				username: userInDb.username,
-				description: exercise.description,
-				duration: exercise.duration,
-				date: new Date(exercise.date).toDateString(),
-				_id: userInDb._id,
-			});
+		res.json({
+			username: userInDb.username,
+			description: newExercise.description,
+			duration: newExercise.duration,
+			date: new Date(newExercise.date).toDateString(),
+			_id: userInDb._id,
 		});
-	});
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'Exercise creation failed!' });
+	}
 });
 
-/*
- * GET
- * Get a user's exercise log
- * @param _id
- */
-app.get('/api/users/:_id/logs', async function (req, res) {
-	const userId = req.params._id;
+app.get('/api/users/:_id/logs', async (req, res) => {
+	const { _id } = req.params;
 	const from = req.query.from || new Date(0).toISOString().substring(0, 10);
-	const to =
-		req.query.to || new Date(Date.now()).toISOString().substring(0, 10);
+	const to = req.query.to || new Date(Date.now()).toISOString().substring(0, 10);
 	const limit = Number(req.query.limit) || 0;
-
-	console.log('### get the log from a user ###'.toLocaleUpperCase());
-
-	//? Find the user
-	let user = await User.findById(userId).exec();
-
-	console.log(
-		'looking for exercises with id ['.toLocaleUpperCase() + userId + '] ...'
-	);
-
-	//? Find the exercises
-	let exercises = await Exercise.find({
-		userId: userId,
-		date: { $gte: from, $lte: to },
-	})
-		.select('description duration date')
-		.limit(limit)
-		.exec();
-
-	let parsedDatesLog = exercises.map((exercise) => {
-		return {
+	try {
+		const user = await User.findById(_id);
+		const exercises = await Exercise.find({
+			userId: _id,
+			date: { $gte: from, $lte: to },
+		})
+			.select('description duration date')
+			.limit(limit);
+		const parsedDatesLog = exercises.map((exercise) => ({
 			description: exercise.description,
 			duration: exercise.duration,
 			date: new Date(exercise.date).toDateString(),
-		};
-	});
-
-	res.json({
-		_id: user._id,
-		username: user.username,
-		count: parsedDatesLog.length,
-		log: parsedDatesLog,
-	});
+		}));
+		res.json({
+			_id: user._id,
+			username: user.username,
+			count: parsedDatesLog.length,
+			log: parsedDatesLog,
+		});
+	} catch (err) {
+		console.error(err);
+		res.json({ message: 'Failed to retrieve user exercises!' });
+	}
 });
 
 const listener = app.listen(process.env.PORT || 3000, () => {
